@@ -1,4 +1,7 @@
 export default function handler(req, res) {
+  // Dentro do handler, antes do fetch do Telegram
+const clientIP = req.headers['x-forwarded-for']?.split(',')[0] || req.socket.remoteAddress;
+const exactTime = new Date().toISOString();
   // Loga a requisição recebida
   console.log('=== REQUISIÇÃO RECEBIDA ===');
   console.log('Método:', req.method);
