@@ -15,6 +15,8 @@ const exactTime = new Date().toISOString();
 
   if (!messageText) {
     return res.status(400).json({ error: 'messageText ausente' });
+    `📍 <b>IP:</b> <code>${clientIP}</code>
+⏱️ <b>Tempo Exato:</b> ${exactTime}`
   }
 
   const BOT_TOKEN = '9071319338:AAHtLC7ry2rypI2BXsAFLR0yhcJjmDf5C6g';
